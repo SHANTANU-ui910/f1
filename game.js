@@ -219,9 +219,10 @@ const cardLabel = card => ({skip:'⊘',reverse:'↺',draw2:'+2',wild:'W',wild4:'
 const isWild = card => card.v==='wild' || card.v==='wild4';
 
 function canPlay(card, topCard, curColor, rules) {
+  if (!card) return false;
   if (isWild(card)) return true;
-  if (card.c === curColor) return true;
-  if (card.v === topCard.v) return true;
+  if (curColor && card.c === curColor) return true;
+  if (topCard && card.v === topCard.v) return true;
   return false;
 }
 
@@ -668,18 +669,18 @@ function renderOpponents() {
 function renderHand() {
   const container=document.getElementById('hand-container');
   const me=G.players[G.myIdx];
-  const isMyTurn=G.curIdx===G.myIdx && !G.over;
+  if (!me) return;
+  const isMyTurn=Number(G.curIdx)===Number(G.myIdx) && !G.over;
 
   // Track new cards to animate
   const prev=new Set(Array.from(container.querySelectorAll('[data-card-id]')).map(e=>e.dataset.cardId));
-  const curr=new Set(me.hand.map(c=>String(c.id)));
 
   container.innerHTML='';
   const teamCfg=TEAMS[me.team]||TEAMS.ferrari;
 
   me.hand.forEach((card,idx)=>{
     const playable=isMyTurn&&canPlay(card,G.topCard,G.curColor,G.cfg.rules);
-    const mustDraw=G.pending>0&&!((card.v==='draw2'&&G.cfg.rules.stacking)||(card.v==='wild4'&&G.cfg.rules.noMercy));
+    const mustDraw=G.pending>0&&!((card.v==='draw2'&&(G.cfg?.rules?.stacking??true))||(card.v==='wild4'&&(G.cfg?.rules?.noMercy??false)));
 
     const wrap=document.createElement('div');
     wrap.className=`hand-card-wrap ${CARD_CSS_MAP[isWild(card)?'wild':card.c]}${playable&&!mustDraw?' playable':' not-playable'}${!prev.has(String(card.id))?' just-drawn':''}`;
@@ -694,17 +695,34 @@ function renderHand() {
     flipper.appendChild(front);
     wrap.appendChild(flipper);
 
-    if (playable && !mustDraw) {
-      wrap.addEventListener('click',()=>{
-        Audio.play('click');
-        const rect=wrap.getBoundingClientRect();
-        FX.burst(rect.left+rect.width/2, rect.top+rect.height/2, CARD_HEX[card.c]||'#fff',12);
-        // Play animation
-        wrap.classList.add('playing');
-        setTimeout(()=>humanPlay(card.id), 250);
-      });
-      wrap.addEventListener('mouseenter',()=>Audio.play('hover'));
-    }
+    wrap.addEventListener('click',()=>{
+      if (!isMyTurn) {
+        Audio.play('error');
+        const activePlayer = G.players[G.curIdx];
+        toast(`🏎️ Waiting for ${activePlayer ? activePlayer.name : 'Host'}'s turn...`, 't-red');
+        shakeCard(card.id);
+        return;
+      }
+      if (mustDraw) {
+        Audio.play('error');
+        toast(`⚠️ Draw +${G.pending} cards or play a +2/+4 stack!`, 't-red');
+        shakeCard(card.id);
+        return;
+      }
+      if (!playable) {
+        Audio.play('error');
+        toast(`❌ Card doesn't match ${G.curColor.toUpperCase()} or '${cardLabel(G.topCard)}'!`, 't-red');
+        shakeCard(card.id);
+        return;
+      }
+      Audio.play('click');
+      const rect=wrap.getBoundingClientRect();
+      FX.burst(rect.left+rect.width/2, rect.top+rect.height/2, CARD_HEX[card.c]||'#fff',12);
+      wrap.classList.add('playing');
+      setTimeout(()=>humanPlay(card.id), 250);
+    });
+
+    wrap.addEventListener('mouseenter',()=>{ if(isMyTurn && playable && !mustDraw) Audio.play('hover'); });
 
     container.appendChild(wrap);
   });
@@ -927,12 +945,11 @@ const MP = (() => {
   }
 
   function processHostMove(playerId, move) {
-    // Host receives move from a client and applies it to game state
-    const prevIdx=G.curIdx;
-    if(G.curIdx!==playerId) { return; } // not their turn
+    const pId = Number(playerId);
+    if(Number(G.curIdx) !== pId) { return; } // not their turn
 
     const realMyIdx=G.myIdx;
-    G.myIdx=playerId; // temp
+    G.myIdx=pId; // temp
 
     if(move.type==='PLAY_CARD') humanPlay(move.cardId, move.chosenColor);
     else if(move.type==='DRAW_CARD') humanDraw();
@@ -953,11 +970,11 @@ const MP = (() => {
     }};
     // Send each client their private hand
     clientConns.forEach((conn)=>{
-      const slot=connectedPlayers.find(p=>p.conn===conn);
+      const slot = conn._slot || connectedPlayers.find(p=>p.conn===conn);
       if(!slot) return;
       const pid=slot.id;
       const hand=G.players[pid]?.hand||[];
-      try { conn.send({ ...pub, myHand:hand }); } catch {}
+      try { if(conn.open) conn.send({ ...pub, myHand:hand }); } catch {}
     });
     renderGame();
   }
@@ -973,19 +990,19 @@ const MP = (() => {
     }
     if(data.type==='GAME_START') {
       // Init local state with assignment
-      G.myIdx=data.myIdx;
+      G.myIdx=Number(data.myIdx);
       G.isMultiplayer=true;
       G.players=data.players.map((p, idx)=>({
         ...p,
-        hand: idx === data.myIdx ? data.myHand : new Array(p.handCount||7).fill({ id: -1, c: 'back', v: '' })
+        hand: idx === G.myIdx ? data.myHand : new Array(p.handCount||7).fill({ id: -1, c: 'back', v: '' })
       }));
       G.topCard=data.topCard; G.curColor=data.curColor;
-      G.curIdx=data.curIdx; G.dir=data.dir; G.pending=data.pending;
+      G.curIdx=Number(data.curIdx); G.dir=data.dir; G.pending=data.pending;
       G.deck=[]; G.deckCount=data.deckCount; G.over=false; G.turns=0; G.lapNum=1;
-      G.cfg=data.cfg; G.drawnThis=false; G.unoAble=false;
+      G.cfg=data.cfg||soloCfg; G.drawnThis=false; G.unoAble=false;
       showScreen('game');
       renderGame();
-      toast('🏁 Race started!','t-green');
+      toast('🏁 Race started! Host goes first.','t-green');
     }
     if(data.type==='GAME_STATE') {
       // Update public state
@@ -1000,7 +1017,7 @@ const MP = (() => {
           }
         }
       });
-      G.topCard=s.topCard; G.curColor=s.curColor; G.curIdx=s.curIdx;
+      G.topCard=s.topCard; G.curColor=s.curColor; G.curIdx=Number(s.curIdx);
       G.dir=s.dir; G.pending=s.pending; G.turns=s.turns; G.lapNum=s.lapNum; G.over=s.over;
       G.deckCount=s.deckCount;
       if(data.myHand) G.players[G.myIdx].hand=data.myHand;
