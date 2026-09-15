@@ -203,7 +203,7 @@ function launchWinConfetti() {
 // ══════════════════════════════════════════════════════════════
 const COLORS   = ['red','blue','green','yellow'];
 const VALS     = ['0','1','2','3','4','5','6','7','8','9','skip','reverse','draw2'];
-const CARD_HEX = { red:'#E53935', blue:'#1E88E5', green:'#43A047', yellow:'#FDD835', wild:'#7B1FA2' };
+const CARD_HEX = { red:'#FF0038', blue:'#0077FF', green:'#00E676', yellow:'#FFD700', wild:'#E040FB' };
 
 function createDeck() {
   const d = []; let id = 0;
