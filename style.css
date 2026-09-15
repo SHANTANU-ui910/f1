@@ -941,6 +941,37 @@ body {
   .hero-title { font-size: 72px; }
 }
 
+/* ── Turn Timer Badge ── */
+.turn-timer-badge {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 18px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,215,0,0.35);
+  font-family: var(--ff-head); font-size: 13px; font-weight: 700; color: var(--f1-gold);
+  margin-left: 10px; transition: all 0.3s ease; flex-shrink: 0;
+}
+.turn-timer-badge.urgent {
+  background: rgba(255,0,56,0.22); border-color: rgba(255,0,56,0.8);
+  color: #FF0038; animation: timer-urgent-pulse 0.6s ease-in-out infinite;
+}
+@keyframes timer-urgent-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,0,56,0.4); }
+  50% { transform: scale(1.06); box-shadow: 0 0 14px 2px rgba(255,0,56,0.7); }
+}
+.timer-ring-svg { transform: rotate(-90deg); flex-shrink: 0; }
+.timer-ring-path { transition: stroke-dashoffset 0.8s linear, stroke 0.3s ease; }
+.timer-unit { font-size: 10px; opacity: 0.75; }
+
+/* ── Drawn Choice Panel ── */
+.drawn-choice-panel {
+  max-width: 340px; width: 90vw; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.drawn-header { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dh-tag { font-family: var(--ff-head); font-size: 10px; letter-spacing: 2px; color: var(--f1-gold); background: rgba(255,215,0,0.15); padding: 3px 10px; border-radius: 10px; }
+.dh-title { font-family: var(--ff-head); font-size: 18px; letter-spacing: 1px; color: white; }
+.drawn-card-preview-wrap { width: 80px; height: 118px; position: relative; margin: 6px 0; }
+.drawn-hint { font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.4; }
+.drawn-actions { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -423,27 +423,50 @@ function forceDrawPending() {
   renderGame(); scheduleAI();
 }
 
-function humanDraw() {
-  if (G.over || G.curIdx!==G.myIdx || G.drawnThis) return;
-  if (G.pending>0) { forceDrawPending(); return; }
+let pendingDrawnCard = null;
+
+function humanDraw(autoExpired = false) {
+  if (G.over || Number(G.curIdx) !== Number(G.myIdx) || G.drawnThis) return;
+  if (G.pending > 0) { forceDrawPending(); return; }
+
   drawCards(G.myIdx, 1);
   G.drawnThis = true;
+  const p = G.players[G.myIdx];
+  const drawnCard = p ? p.hand.at(-1) : null;
 
-  // Force play
-  if (G.cfg.rules.forcePlay) {
-    const last = G.players[G.myIdx].hand.at(-1);
-    if (canPlay(last, G.topCard, G.curColor, G.cfg.rules)) {
-      toast('Force Play: auto-playing drawn card!');
-      setTimeout(()=>humanPlay(last.id), 350);
-      return;
+  if (G.isMultiplayer) {
+    if (MP.getIsHost()) {
+      MP.broadcastGameState();
+    } else {
+      MP.sendMove({ type: 'DRAW_CARD' });
     }
   }
 
-  if (G.isMultiplayer) {
-    if (MP.getIsHost()) MP.broadcastGameState();
-    else MP.sendMove({ type:'DRAW_CARD' });
-  }
   renderGame();
+
+  if (drawnCard) {
+    const playable = canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules);
+    if (playable && !autoExpired) {
+      showDrawnChoiceModal(drawnCard);
+    } else if (playable && autoExpired) {
+      toast('⚡ Auto-playing drawn card on timer expiration!');
+      humanPlay(drawnCard.id);
+    } else {
+      toast(`📥 Drew ${cardLabel(drawnCard)} (${drawnCard.c.toUpperCase()}) — card kept in hand.`);
+    }
+  }
+}
+
+function showDrawnChoiceModal(card) {
+  pendingDrawnCard = card;
+  const preview = document.getElementById('drawn-card-preview');
+  if (preview) {
+    const lbl = cardLabel(card);
+    const cls = CARD_CSS_MAP[isWild(card) ? 'wild' : card.c];
+    preview.className = `game-card ${cls}`;
+    preview.innerHTML = `<span class="corner-tl">${lbl}</span><span class="center-val">${lbl}</span><span class="corner-br">${lbl}</span>`;
+  }
+  document.getElementById('ov-drawn-choice').style.display = 'flex';
 }
 
 function humanPass() {
@@ -481,26 +504,27 @@ function rotateAllHands() {
 }
 
 function endGame(winIdx) {
-  G.over=true; if(aiTimer) clearTimeout(aiTimer);
+  G.over=true; stopTurnTimer(); if(aiTimer) clearTimeout(aiTimer);
+  const ovDrawn = document.getElementById('ov-drawn-choice');
+  if (ovDrawn) ovDrawn.style.display = 'none';
   const winner = G.players[winIdx];
-  const humanWins = winner.isHuman;
+  const humanWins = winner ? winner.isHuman : false;
   Audio.play(humanWins?'win':'lose');
 
   const elapsed = Math.round((Date.now()-G.t0)/1000);
   const mins = Math.floor(elapsed/60), secs = elapsed%60;
-  const totalCards = G.players.reduce((s,p)=>s+p.hand.length,0);
 
   document.getElementById('win-trophy').textContent = humanWins ? '🏆' : '💀';
   document.getElementById('win-title').textContent  = humanWins ? '🏆 RACE WON!' : '🏁 RACE OVER';
   document.getElementById('win-title').style.color  = humanWins ? '#FFD700' : '#ff8a80';
-  document.getElementById('win-sub').textContent    = humanWins ? `Outstanding drive, ${G.players[0].name}!` : `${winner.name} crosses the finish line!`;
+  document.getElementById('win-sub').textContent    = humanWins ? `Outstanding drive, ${G.players[0].name}!` : `${winner ? winner.name : 'Opponent'} crosses the finish line!`;
 
   const statsEl = document.getElementById('win-stats-grid');
   statsEl.innerHTML = `
     <div class="wsg-item"><div class="wsg-val">${mins}:${String(secs).padStart(2,'0')}</div><div class="wsg-lbl">RACE TIME</div></div>
     <div class="wsg-item"><div class="wsg-val">${G.turns}</div><div class="wsg-lbl">TURNS PLAYED</div></div>
     <div class="wsg-item"><div class="wsg-val">${G.lapNum}</div><div class="wsg-lbl">LAPS</div></div>
-    <div class="wsg-item"><div class="wsg-val">${winner.name}</div><div class="wsg-lbl">WINNER</div></div>
+    <div class="wsg-item"><div class="wsg-val">${winner ? winner.name : 'Driver'}</div><div class="wsg-lbl">WINNER</div></div>
   `;
 
   document.getElementById('screen-win').style.display='flex';
@@ -602,6 +626,80 @@ function setAIThinking(idx, show) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  TURN TIMER (15s F1 Pit Stop Clock)
+// ══════════════════════════════════════════════════════════════
+let turnTimerInterval = null;
+let turnSecondsLeft = 15;
+const TURN_LIMIT_SECS = 15;
+let lastTurnIdx = null;
+
+function stopTurnTimer() {
+  if (turnTimerInterval) { clearInterval(turnTimerInterval); turnTimerInterval = null; }
+}
+
+function startTurnTimer() {
+  stopTurnTimer();
+  if (G.over) return;
+  turnSecondsLeft = TURN_LIMIT_SECS;
+  updateTimerUI();
+
+  turnTimerInterval = setInterval(() => {
+    if (G.over) { stopTurnTimer(); return; }
+    turnSecondsLeft--;
+    updateTimerUI();
+
+    if (turnSecondsLeft === 4 && Number(G.curIdx) === Number(G.myIdx)) {
+      Audio.play('hover');
+    }
+
+    if (turnSecondsLeft <= 0) {
+      stopTurnTimer();
+      onTurnTimerExpired();
+    }
+  }, 1000);
+}
+
+function updateTimerUI() {
+  const textEl = document.getElementById('timer-sec-text');
+  const pathEl = document.getElementById('timer-ring-path');
+  const badgeEl = document.getElementById('turn-timer-badge');
+  if (!textEl || !pathEl || !badgeEl) return;
+
+  textEl.textContent = Math.max(0, turnSecondsLeft);
+  const ratio = Math.max(0, turnSecondsLeft) / TURN_LIMIT_SECS;
+  const strokeDash = 88;
+  pathEl.style.strokeDashoffset = strokeDash * (1 - ratio);
+
+  if (turnSecondsLeft <= 4) {
+    badgeEl.classList.add('urgent');
+    pathEl.setAttribute('stroke', '#FF0038');
+  } else {
+    badgeEl.classList.remove('urgent');
+    pathEl.setAttribute('stroke', '#FFD700');
+  }
+}
+
+function onTurnTimerExpired() {
+  if (G.over) return;
+  const isMyTurn = Number(G.curIdx) === Number(G.myIdx);
+  if (!isMyTurn) return;
+
+  toast('⏱️ Pit Stop Timer Expired!', 't-red');
+  Audio.play('penalty');
+
+  const ovChoice = document.getElementById('ov-drawn-choice');
+  if (ovChoice && ovChoice.style.display !== 'none') ovChoice.style.display = 'none';
+
+  if (G.pending > 0) {
+    forceDrawPending();
+  } else if (G.drawnThis) {
+    humanPass();
+  } else {
+    humanDraw(true);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 //  RENDER ENGINE
 // ══════════════════════════════════════════════════════════════
 const CARD_CSS_MAP = { red:'c-red', blue:'c-blue', green:'c-green', yellow:'c-yellow', wild:'c-wild' };
@@ -612,6 +710,11 @@ function renderGame() {
   renderHand();
   renderHUD();
   updateColorBand();
+
+  if (lastTurnIdx !== G.curIdx) {
+    lastTurnIdx = G.curIdx;
+    startTurnTimer();
+  }
 }
 
 function renderTopCard() {
@@ -1297,8 +1400,27 @@ document.getElementById('btn-start-solo').addEventListener('click',()=>{
   scheduleAI();
 });
 
+// Drawn card choice buttons
+document.getElementById('btn-play-drawn')?.addEventListener('click', () => {
+  Audio.play('click');
+  document.getElementById('ov-drawn-choice').style.display = 'none';
+  if (pendingDrawnCard) {
+    const cardToPlay = pendingDrawnCard;
+    pendingDrawnCard = null;
+    humanPlay(cardToPlay.id);
+  }
+});
+
+document.getElementById('btn-keep-drawn')?.addEventListener('click', () => {
+  Audio.play('click');
+  document.getElementById('ov-drawn-choice').style.display = 'none';
+  toast('📥 Card kept in hand. Click PASS TURN to end turn.');
+  pendingDrawnCard = null;
+  renderGame();
+});
+
 // ── GAME BUTTONS ──
-document.getElementById('draw-pile').addEventListener('click',()=>{ if(G.over||G.curIdx!==G.myIdx||G.drawnThis) return; humanDraw(); });
+document.getElementById('draw-pile').addEventListener('click',()=>{ if(G.over||Number(G.curIdx)!==Number(G.myIdx)||G.drawnThis) return; humanDraw(); });
 document.getElementById('btn-draw').addEventListener('click',()=>humanDraw());
 document.getElementById('btn-pass').addEventListener('click',()=>humanPass());
 document.getElementById('btn-uno').addEventListener('click',()=>callUno());

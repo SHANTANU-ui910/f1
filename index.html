@@ -315,6 +315,13 @@
         <span class="tt-dot"></span>
         <span id="tt-text">YOUR TURN</span>
       </div>
+      <div class="turn-timer-badge" id="turn-timer-badge" title="15s Pit Stop Timer">
+        <svg class="timer-ring-svg" width="28" height="28" viewBox="0 0 36 36">
+          <circle class="timer-ring-bg" cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3"/>
+          <circle class="timer-ring-path" id="timer-ring-path" cx="18" cy="18" r="14" fill="none" stroke="#FFD700" stroke-width="3" stroke-dasharray="88" stroke-dashoffset="0" stroke-linecap="round"/>
+        </svg>
+        <span id="timer-sec-text">15</span><span class="timer-unit">s</span>
+      </div>
     </div>
     <div class="hud-right">
       <div class="lap-counter">LAP <span id="lap-num">1</span></div>
@@ -387,6 +394,24 @@
 <!-- ======================================================
      OVERLAYS
 ====================================================== -->
+<!-- Drawn Card Action Overlay -->
+<div id="ov-drawn-choice" class="overlay" style="display:none">
+  <div class="ov-panel drawn-choice-panel">
+    <div class="drawn-header">
+      <span class="dh-tag">📥 CARD DRAWN</span>
+      <h3 class="dh-title">CARD IS PLAYABLE!</h3>
+    </div>
+    <div class="drawn-card-preview-wrap">
+      <div id="drawn-card-preview" class="game-card"></div>
+    </div>
+    <p class="drawn-hint">You drew a card that matches! Play it now or keep it in your hand?</p>
+    <div class="drawn-actions">
+      <button id="btn-play-drawn" class="cta-primary btn-full pulse-cta">⚡ PLAY DRAWN CARD</button>
+      <button id="btn-keep-drawn" class="cta-secondary btn-full">📥 KEEP IN HAND</button>
+    </div>
+  </div>
+</div>
+
 <!-- Color Picker -->
 <div id="ov-color" class="overlay" style="display:none">
   <div class="ov-panel color-picker-panel">
