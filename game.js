@@ -416,6 +416,11 @@ function humanPlay(cardId, chosenColor=null) {
 }
 
 function forceDrawPending() {
+  if (G.isMultiplayer && !MP.getIsHost()) {
+    toast('📥 Drawing pending penalty cards...', 't-red');
+    MP.sendMove({ type: 'FORCE_DRAW_PENDING' });
+    return;
+  }
   drawCards(G.myIdx, G.pending); G.pending=0; G.drawnThis=true;
   toast(`Drew ${G.pending || 'pending'} cards!`,'t-red');
   G.curIdx = nextIdx(); G.turns++;
@@ -429,20 +434,24 @@ function humanDraw(autoExpired = false) {
   if (G.over || Number(G.curIdx) !== Number(G.myIdx) || G.drawnThis) return;
   if (G.pending > 0) { forceDrawPending(); return; }
 
+  if (G.isMultiplayer && !MP.getIsHost()) {
+    toast('📥 Drawing card from deck...', 't-gold');
+    MP.sendMove({ type: 'DRAW_CARD' });
+    return;
+  }
+
+  // Host (or Solo mode) draws from master deck
   drawCards(G.myIdx, 1);
   G.drawnThis = true;
   const p = G.players[G.myIdx];
   const drawnCard = p ? p.hand.at(-1) : null;
 
-  if (G.isMultiplayer) {
-    if (MP.getIsHost()) {
-      MP.broadcastGameState();
-    } else {
-      MP.sendMove({ type: 'DRAW_CARD' });
-    }
+  if (G.isMultiplayer && MP.getIsHost()) {
+    const isPlayable = drawnCard ? canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules) : false;
+    MP.broadcastGameState({ forPlayer: G.myIdx, card: drawnCard, isPlayable });
+  } else {
+    renderGame();
   }
-
-  renderGame();
 
   if (drawnCard) {
     const playable = canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules);
@@ -1049,21 +1058,41 @@ const MP = (() => {
 
   function processHostMove(playerId, move) {
     const pId = Number(playerId);
-    if(Number(G.curIdx) !== pId) { return; } // not their turn
+    if (Number(G.curIdx) !== pId) return; // not their turn
 
-    const realMyIdx=G.myIdx;
-    G.myIdx=pId; // temp
-
-    if(move.type==='PLAY_CARD') humanPlay(move.cardId, move.chosenColor);
-    else if(move.type==='DRAW_CARD') humanDraw();
-    else if(move.type==='PASS') humanPass();
-    else if(move.type==='CALL_UNO') callUno();
-
-    G.myIdx=realMyIdx;
-    broadcastGameState();
+    if (move.type === 'PLAY_CARD') {
+      const realMyIdx = G.myIdx;
+      G.myIdx = pId;
+      humanPlay(move.cardId, move.chosenColor);
+      G.myIdx = realMyIdx;
+    }
+    else if (move.type === 'DRAW_CARD') {
+      drawCards(pId, 1);
+      const drawnCard = G.players[pId]?.hand.at(-1);
+      const isPlayable = drawnCard ? canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules) : false;
+      broadcastGameState({ forPlayer: pId, card: drawnCard, isPlayable });
+    }
+    else if (move.type === 'FORCE_DRAW_PENDING') {
+      const realMyIdx = G.myIdx;
+      G.myIdx = pId;
+      forceDrawPending();
+      G.myIdx = realMyIdx;
+    }
+    else if (move.type === 'PASS') {
+      const realMyIdx = G.myIdx;
+      G.myIdx = pId;
+      humanPass();
+      G.myIdx = realMyIdx;
+    }
+    else if (move.type === 'CALL_UNO') {
+      const realMyIdx = G.myIdx;
+      G.myIdx = pId;
+      callUno();
+      G.myIdx = realMyIdx;
+    }
   }
 
-  function broadcastGameState() {
+  function broadcastGameState(drawnInfo = null) {
     if(!isHost) return;
     const pub={ type:'GAME_STATE', state:{
       players:G.players.map(p=>({id:p.id,name:p.name,team:p.team,handCount:p.hand.length})),
@@ -1077,7 +1106,11 @@ const MP = (() => {
       if(!slot) return;
       const pid=slot.id;
       const hand=G.players[pid]?.hand||[];
-      try { if(conn.open) conn.send({ ...pub, myHand:hand }); } catch {}
+      const msg = { ...pub, myHand: hand };
+      if (drawnInfo && Number(drawnInfo.forPlayer) === Number(pid)) {
+        msg.drawnCardInfo = drawnInfo;
+      }
+      try { if(conn.open) conn.send(msg); } catch {}
     });
     renderGame();
   }
@@ -1124,6 +1157,17 @@ const MP = (() => {
       G.dir=s.dir; G.pending=s.pending; G.turns=s.turns; G.lapNum=s.lapNum; G.over=s.over;
       G.deckCount=s.deckCount;
       if(data.myHand) G.players[G.myIdx].hand=data.myHand;
+
+      if (data.drawnCardInfo && Number(data.drawnCardInfo.forPlayer) === Number(G.myIdx)) {
+        G.drawnThis = true;
+        const { card, isPlayable } = data.drawnCardInfo;
+        if (isPlayable) {
+          showDrawnChoiceModal(card);
+        } else if (card) {
+          toast(`📥 Drew ${cardLabel(card)} (${card.c.toUpperCase()}) — card kept in hand.`);
+        }
+      }
+
       renderGame();
       if(G.over) endGame(s.players.findIndex(p=>p.handCount===0));
     }
