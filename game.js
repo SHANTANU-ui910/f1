@@ -745,20 +745,37 @@ function renderGame() {
   }
 }
 
+let lastRenderedTopCardId = null;
+
 function renderTopCard() {
   const el = document.getElementById('top-card');
   const card = G.topCard;
+  if (!el || !card) return;
+
   const lbl = cardLabel(card);
-  const cls = CARD_CSS_MAP[G.curColor] || 'c-wild';
+  const colorKey = isWild(card) ? 'wild' : (card.c || G.curColor || 'wild');
+  const cls = CARD_CSS_MAP[colorKey] || CARD_CSS_MAP[G.curColor] || 'c-wild';
 
-  el.className = `game-card ${cls} top-card-anim`;
+  const isNewCard = lastRenderedTopCardId !== card.id;
+  lastRenderedTopCardId = card.id;
+
+  el.className = `game-card ${cls}${isNewCard ? ' top-card-anim' : ''}`;
   el.innerHTML = `<span class="corner-tl">${lbl}</span><span class="center-val">${lbl}</span><span class="corner-br">${lbl}</span>`;
-  setTimeout(()=>el.classList.remove('top-card-anim'),500);
 
-  const rect = el.getBoundingClientRect();
-  FX.burst(rect.left+rect.width/2, rect.top+rect.height/2, CARD_HEX[G.curColor]||'#fff', 10);
+  if (isNewCard) {
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        FX.burst(rect.left + rect.width / 2, rect.top + rect.height / 2, CARD_HEX[G.curColor] || '#fff', 12);
+      }
+    } catch {}
+    setTimeout(() => el.classList.remove('top-card-anim'), 450);
+  }
 
-  if (!el.style.animation) el.style.cssText += 'animation:top-card-anim 0.4s var(--ease-spring)';
+  const strip = document.getElementById('status-strip');
+  if (strip) {
+    strip.textContent = `MATCH ${(G.curColor||'').toUpperCase()} OR '${lbl}'`;
+  }
 }
 
 function renderOpponents() {
@@ -924,8 +941,8 @@ function updateColorBand() {
 // Discard pile top-card animation (added via CSS class)
 const dcStyle=document.createElement('style');
 dcStyle.textContent=`
-@keyframes top-card-anim{from{transform:translateY(-20px) scale(0.85) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
-.top-card-anim{animation:top-card-anim 0.4s var(--ease-spring)!important}
+@keyframes top-card-anim{from{transform:translateY(-16px) scale(0.9) rotate(-4deg);opacity:0.6}to{transform:none;opacity:1}}
+.top-card-anim{animation:top-card-anim 0.35s var(--ease-spring)!important}
 `;
 document.head.appendChild(dcStyle);
 
