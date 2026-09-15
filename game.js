@@ -455,11 +455,13 @@ function humanDraw(autoExpired = false) {
 
   if (drawnCard) {
     const playable = canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules);
-    if (playable && !autoExpired) {
+    const forcePlayRule = G.cfg?.rules?.forcePlay ?? true;
+
+    if (playable && (forcePlayRule || autoExpired)) {
+      toast('⚡ Force Play: Auto-playing drawn card!');
+      setTimeout(() => humanPlay(drawnCard.id), 300);
+    } else if (playable) {
       showDrawnChoiceModal(drawnCard);
-    } else if (playable && autoExpired) {
-      toast('⚡ Auto-playing drawn card on timer expiration!');
-      humanPlay(drawnCard.id);
     } else {
       toast(`📥 Drew ${cardLabel(drawnCard)} (${drawnCard.c.toUpperCase()}) — card kept in hand.`);
     }
@@ -1161,7 +1163,12 @@ const MP = (() => {
       if (data.drawnCardInfo && Number(data.drawnCardInfo.forPlayer) === Number(G.myIdx)) {
         G.drawnThis = true;
         const { card, isPlayable } = data.drawnCardInfo;
-        if (isPlayable) {
+        const forcePlayRule = G.cfg?.rules?.forcePlay ?? true;
+
+        if (isPlayable && forcePlayRule) {
+          toast('⚡ Force Play: Auto-playing drawn card!');
+          setTimeout(() => humanPlay(card.id), 300);
+        } else if (isPlayable) {
           showDrawnChoiceModal(card);
         } else if (card) {
           toast(`📥 Drew ${cardLabel(card)} (${card.c.toUpperCase()}) — card kept in hand.`);
