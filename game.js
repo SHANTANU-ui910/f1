@@ -366,7 +366,7 @@ function humanPlay(cardId, chosenColor=null) {
 
   const p = G.players[G.myIdx];
   if (!p) return;
-  const ci = p.hand.findIndex(c=>c.id===cardId);
+  const ci = p.hand.findIndex(c=>Number(c.id)===Number(cardId));
   if (ci===-1) return;
   const card = p.hand[ci];
 
@@ -614,7 +614,7 @@ function runAI() {
 }
 
 function aiPlay(p, card) {
-  const idx = p.hand.findIndex(c=>c.id===card.id);
+  const idx = p.hand.findIndex(c=>Number(c.id)===Number(card.id));
   if(idx===-1) { G.curIdx=nextIdx(); G.turns++; renderGame(); scheduleAI(); return; }
   p.hand.splice(idx,1);
 
@@ -753,13 +753,16 @@ function renderTopCard() {
   if (!el || !card) return;
 
   const lbl = cardLabel(card);
-  const colorKey = isWild(card) ? 'wild' : (card.c || G.curColor || 'wild');
-  const cls = CARD_CSS_MAP[colorKey] || CARD_CSS_MAP[G.curColor] || 'c-wild';
+  const colorKey = isWild(card) ? 'wild' : (G.curColor || card.c || 'wild');
+  const cls = CARD_CSS_MAP[colorKey] || CARD_CSS_MAP[card.c] || 'c-wild';
 
-  const isNewCard = lastRenderedTopCardId !== card.id;
+  const isNewCard = String(lastRenderedTopCardId) !== String(card.id);
   lastRenderedTopCardId = card.id;
 
   el.className = `game-card ${cls}${isNewCard ? ' top-card-anim' : ''}`;
+  el.style.opacity = '1';
+  el.style.display = 'flex';
+  el.style.visibility = 'visible';
   el.innerHTML = `<span class="corner-tl">${lbl}</span><span class="center-val">${lbl}</span><span class="corner-br">${lbl}</span>`;
 
   if (isNewCard) {
@@ -774,7 +777,7 @@ function renderTopCard() {
 
   const strip = document.getElementById('status-strip');
   if (strip) {
-    strip.textContent = `MATCH ${(G.curColor||'').toUpperCase()} OR '${lbl}'`;
+    strip.textContent = `MATCH ${(G.curColor||card.c||'').toUpperCase()} OR '${lbl}'`;
   }
 }
 
