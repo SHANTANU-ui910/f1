@@ -402,7 +402,13 @@ function humanPlay(cardId, chosenColor=null) {
   G.turns++; G.lapNum = Math.ceil(G.turns / G.players.length);
 
   // Multiplayer: send to host/peers
-  if (G.isMultiplayer) { MP.sendMove({ type:'PLAY_CARD', cardId, chosenColor }); }
+  if (G.isMultiplayer) {
+    if (MP.getIsHost()) {
+      MP.broadcastGameState();
+    } else {
+      MP.sendMove({ type:'PLAY_CARD', cardId, chosenColor });
+    }
+  }
 
   renderGame();
   scheduleAI();
@@ -412,6 +418,7 @@ function forceDrawPending() {
   drawCards(G.myIdx, G.pending); G.pending=0; G.drawnThis=true;
   toast(`Drew ${G.pending || 'pending'} cards!`,'t-red');
   G.curIdx = nextIdx(); G.turns++;
+  if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState();
   renderGame(); scheduleAI();
 }
 
@@ -431,14 +438,20 @@ function humanDraw() {
     }
   }
 
-  if (G.isMultiplayer) MP.sendMove({ type:'DRAW_CARD' });
+  if (G.isMultiplayer) {
+    if (MP.getIsHost()) MP.broadcastGameState();
+    else MP.sendMove({ type:'DRAW_CARD' });
+  }
   renderGame();
 }
 
 function humanPass() {
   if (G.over || G.curIdx!==G.myIdx || !G.drawnThis) return;
   G.drawnThis=false; G.curIdx=nextIdx(); G.turns++;
-  if (G.isMultiplayer) MP.sendMove({ type:'PASS' });
+  if (G.isMultiplayer) {
+    if (MP.getIsHost()) MP.broadcastGameState();
+    else MP.sendMove({ type:'PASS' });
+  }
   renderGame(); scheduleAI();
 }
 
@@ -446,7 +459,10 @@ function callUno() {
   if (!G.unoAble) { Audio.play('error'); toast('No UNO needed right now!','t-red'); return; }
   G.unoCalled=true; G.unoAble=false;
   Audio.play('uno'); toast('🗣️ UNO!', 't-gold');
-  if (G.isMultiplayer) MP.sendMove({ type:'CALL_UNO' });
+  if (G.isMultiplayer) {
+    if (MP.getIsHost()) MP.broadcastGameState();
+    else MP.sendMove({ type:'CALL_UNO' });
+  }
 }
 
 function cardSFX(card) {
@@ -569,6 +585,7 @@ function aiPlay(p, card) {
   else { G.curIdx=nextIdx(); }
 
   G.turns++; G.lapNum=Math.ceil(G.turns/G.players.length);
+  if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState();
   renderGame(); scheduleAI();
 }
 
@@ -635,12 +652,13 @@ function renderOpponents() {
 
     // Mini card backs
     const cardsRow=document.createElement('div'); cardsRow.className='opp-cards-row';
-    const shown=Math.min(p.hand.length,7);
+    const cardCount = p.hand ? p.hand.length : (p.handCount || 0);
+    const shown=Math.min(cardCount,7);
     for(let i=0;i<shown;i++) { const mc=document.createElement('div'); mc.className='opp-mini-card'; cardsRow.appendChild(mc); }
     slot.appendChild(cardsRow);
 
-    const countEl=document.createElement('div'); countEl.className='opp-card-num'+(p.hand.length===1?' uno-alert':'');
-    countEl.textContent=p.hand.length===1?'⚠️ UNO!':`${p.hand.length} cards`;
+    const countEl=document.createElement('div'); countEl.className='opp-card-num'+(cardCount===1?' uno-alert':'');
+    countEl.textContent=cardCount===1?'⚠️ UNO!':`${cardCount} cards`;
     slot.appendChild(countEl);
 
     grid.appendChild(slot);
@@ -743,7 +761,7 @@ function renderHUD() {
     dtxt.textContent='CCW';
   }
 
-  document.getElementById('draw-pile').querySelector('.pile-badge').textContent=G.deck.length;
+  document.getElementById('draw-pile').querySelector('.pile-badge').textContent=(G.deckCount!==undefined)?G.deckCount:G.deck.length;
   document.getElementById('hud-mode').textContent=G.cfg.mode.toUpperCase()+' RACE';
 }
 
@@ -926,6 +944,7 @@ const MP = (() => {
   }
 
   function broadcastGameState() {
+    if(!isHost) return;
     const pub={ type:'GAME_STATE', state:{
       players:G.players.map(p=>({id:p.id,name:p.name,team:p.team,handCount:p.hand.length})),
       topCard:G.topCard, curColor:G.curColor, curIdx:G.curIdx,
@@ -933,9 +952,10 @@ const MP = (() => {
       turns:G.turns, lapNum:G.lapNum, over:G.over
     }};
     // Send each client their private hand
-    clientConns.forEach((conn,ci)=>{
-      const pid=connectedPlayers.find(p=>p.conn===conn)?.id;
-      if(pid===undefined) return;
+    clientConns.forEach((conn)=>{
+      const slot=connectedPlayers.find(p=>p.conn===conn);
+      if(!slot) return;
+      const pid=slot.id;
       const hand=G.players[pid]?.hand||[];
       try { conn.send({ ...pub, myHand:hand }); } catch {}
     });
@@ -955,11 +975,13 @@ const MP = (() => {
       // Init local state with assignment
       G.myIdx=data.myIdx;
       G.isMultiplayer=true;
-      G.players=data.players.map(p=>({...p,hand:[]}));
-      G.players[G.myIdx].hand=data.myHand;
+      G.players=data.players.map((p, idx)=>({
+        ...p,
+        hand: idx === data.myIdx ? data.myHand : new Array(p.handCount||7).fill({ id: -1, c: 'back', v: '' })
+      }));
       G.topCard=data.topCard; G.curColor=data.curColor;
       G.curIdx=data.curIdx; G.dir=data.dir; G.pending=data.pending;
-      G.deck=[]; G.over=false; G.turns=0; G.lapNum=1;
+      G.deck=[]; G.deckCount=data.deckCount; G.over=false; G.turns=0; G.lapNum=1;
       G.cfg=data.cfg; G.drawnThis=false; G.unoAble=false;
       showScreen('game');
       renderGame();
@@ -968,9 +990,19 @@ const MP = (() => {
     if(data.type==='GAME_STATE') {
       // Update public state
       const s=data.state;
-      G.players.forEach((p,i)=>{ const sp=s.players[i]; if(sp){ p.name=sp.name; p.team=sp.team; } });
+      G.players.forEach((p,i)=>{
+        const sp=s.players[i];
+        if(sp){
+          p.name=sp.name;
+          p.team=sp.team;
+          if (i !== G.myIdx) {
+            p.hand = new Array(sp.handCount||0).fill({ id: -1, c: 'back', v: '' });
+          }
+        }
+      });
       G.topCard=s.topCard; G.curColor=s.curColor; G.curIdx=s.curIdx;
       G.dir=s.dir; G.pending=s.pending; G.turns=s.turns; G.lapNum=s.lapNum; G.over=s.over;
+      G.deckCount=s.deckCount;
       if(data.myHand) G.players[G.myIdx].hand=data.myHand;
       renderGame();
       if(G.over) endGame(s.players.findIndex(p=>p.handCount===0));
@@ -999,13 +1031,16 @@ const MP = (() => {
     };
 
     // Send start to all clients
-    clientConns.forEach((conn,ci)=>{
-      const pid=connectedPlayers[ci+1]?.id??ci+1;
+    clientConns.forEach((conn)=>{
+      const slot=connectedPlayers.find(p=>p.conn===conn);
+      if(!slot) return;
+      const pid=slot.id;
       try {
         conn.send({ type:'GAME_START', myIdx:pid, cfg,
-          players:players.map(p=>({...p,hand:[]})),
+          players:players.map(p=>({id:p.id, name:p.name, team:p.team, isHuman:p.isHuman, handCount:p.hand.length})),
           myHand:players[pid]?.hand||[],
-          topCard,curColor:topCard.c,curIdx:0,dir:1,pending:0
+          topCard,curColor:topCard.c,curIdx:0,dir:1,pending:0,
+          deckCount:G.deck.length
         });
       } catch {}
     });
