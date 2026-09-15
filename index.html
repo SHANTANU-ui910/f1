@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>UNO//F1 – Online Multiplayer Card Battle</title>
+  <meta name="description" content="Play UNO online with friends in real-time. F1 themed. 1v1, 2v2, 4v4 and Free-for-All. Room codes for private matches."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <!-- PeerJS for WebRTC peer-to-peer multiplayer -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- AUDIO ENGINE (hidden) -->
+<div id="audio-engine" aria-hidden="true"></div>
+<!-- PARTICLE + SPEED LINES CANVAS -->
+<canvas id="fx-canvas"></canvas>
+
+<!-- ======================================================
+     SCREEN 1: LANDING
+====================================================== -->
+<div id="screen-landing" class="screen active">
+  <div class="carbon-bg"></div>
+  <div class="f1-stripes"></div>
+  <div class="speed-lines" id="landing-lines"></div>
+
+  <header class="top-bar">
+    <div class="f1-logo">
+      <div class="f1-flag-icon">🏁</div>
+      <span class="logo-uno">UNO</span><span class="logo-slash">//</span><span class="logo-f1">F1</span>
+    </div>
+    <div class="top-bar-right">
+      <span class="season-badge">SEASON 2026</span>
+      <button id="btn-sound-toggle" class="icon-btn" aria-label="Toggle Sound">
+        <span id="snd-icon">🔊</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="landing-main">
+    <div class="floating-cards" aria-hidden="true">
+      <div class="fc fc-1" data-color="red" data-val="7"></div>
+      <div class="fc fc-2" data-color="blue" data-val="+2"></div>
+      <div class="fc fc-3" data-color="yellow" data-val="⊘"></div>
+      <div class="fc fc-4" data-color="green" data-val="↺"></div>
+      <div class="fc fc-5" data-color="wild" data-val="W"></div>
+      <div class="fc fc-6" data-color="red" data-val="↺"></div>
+    </div>
+
+    <div class="hero-content">
+      <div class="hero-badge">🏎️ MULTIPLAYER READY</div>
+      <h1 class="hero-title">
+        RACE TO<br/><span class="title-gradient">PLAY LAST</span>
+      </h1>
+      <p class="hero-tagline">F1-Themed UNO · Real-Time Multiplayer · All Modes</p>
+      <div class="hero-cta">
+        <button id="btn-multiplayer" class="cta-primary pulse-cta">
+          <span class="cta-icon">👥</span> PLAY WITH FRIENDS
+        </button>
+        <button id="btn-solo" class="cta-secondary">
+          <span class="cta-icon">🤖</span> VS AI
+        </button>
+      </div>
+    </div>
+
+    <div class="mode-showcase">
+      <div class="mode-tile" data-mode="1v1"><span class="mt-emoji">⚔️</span><b>1v1</b><small>Duel</small></div>
+      <div class="mode-tile" data-mode="2v2"><span class="mt-emoji">🤝</span><b>2v2</b><small>Teams</small></div>
+      <div class="mode-tile" data-mode="4v4"><span class="mt-emoji">👑</span><b>4v4</b><small>Grand Prix</small></div>
+      <div class="mode-tile" data-mode="ffa"><span class="mt-emoji">🎯</span><b>FFA</b><small>Free For All</small></div>
+    </div>
+  </main>
+
+  <footer class="landing-footer">
+    <span>🏁 POWERED BY WEBRTC · NO SERVER NEEDED</span>
+    <button id="btn-how-to" class="text-btn">HOW TO PLAY ›</button>
+  </footer>
+</div>
+
+<!-- ======================================================
+     SCREEN 2: MULTIPLAYER LOBBY
+====================================================== -->
+<div id="screen-lobby" class="screen">
+  <div class="carbon-bg"></div>
+  <button class="back-btn" id="btn-lobby-back">← BACK TO GRID</button>
+
+  <div class="lobby-container">
+    <div class="lobby-header">
+      <div class="f1-logo sm">
+        <span class="logo-uno">UNO</span><span class="logo-slash">//</span><span class="logo-f1">F1</span>
+      </div>
+      <h2 class="lobby-title">MULTIPLAYER HUB</h2>
+    </div>
+
+    <!-- Tab switcher -->
+    <div class="lobby-tabs">
+      <button class="ltab active" id="tab-create" data-tab="create">🏎️ CREATE ROOM</button>
+      <button class="ltab" id="tab-join" data-tab="join">🔑 JOIN ROOM</button>
+    </div>
+
+    <!-- CREATE ROOM PANEL -->
+    <div id="panel-create" class="lobby-panel active">
+      <div class="setup-row">
+        <label class="setup-label">YOUR NAME</label>
+        <input type="text" id="mp-name-create" class="f1-input" placeholder="Driver name..." maxlength="14" value="Driver 1"/>
+      </div>
+
+      <div class="setup-row">
+        <label class="setup-label">YOUR F1 TEAM</label>
+        <div class="team-grid" id="team-grid-create">
+          <div class="team-swatch active" data-team="ferrari" style="--tc:#E8002D">🔴 Ferrari</div>
+          <div class="team-swatch" data-team="mercedes" style="--tc:#00D2BE">🩵 Mercedes</div>
+          <div class="team-swatch" data-team="redbull" style="--tc:#3671C6">🔵 Red Bull</div>
+          <div class="team-swatch" data-team="mclaren" style="--tc:#FF8000">🟠 McLaren</div>
+          <div class="team-swatch" data-team="alpine" style="--tc:#0093CC">🩵 Alpine</div>
+          <div class="team-swatch" data-team="aston" style="--tc:#358C75">🟢 Aston</div>
+          <div class="team-swatch" data-team="williams" style="--tc:#005AFF">💙 Williams</div>
+          <div class="team-swatch" data-team="haas" style="--tc:#B6BABD">⚪ Haas</div>
+        </div>
+      </div>
+
+      <div class="setup-row">
+        <label class="setup-label">GAME MODE</label>
+        <div class="mode-row" id="mp-mode-create">
+          <button class="modb active" data-m="1v1">1v1</button>
+          <button class="modb" data-m="2v2">2v2</button>
+          <button class="modb" data-m="4v4">4v4</button>
+          <button class="modb" data-m="ffa">FFA</button>
+        </div>
+      </div>
+
+      <div class="setup-row" id="ffa-count-row" style="display:none">
+        <label class="setup-label">NUMBER OF PLAYERS (FFA)</label>
+        <div class="mode-row">
+          <button class="modb" data-c="3">3</button>
+          <button class="modb active" data-c="4">4</button>
+          <button class="modb" data-c="5">5</button>
+          <button class="modb" data-c="6">6</button>
+        </div>
+      </div>
+
+      <div class="setup-row">
+        <label class="setup-label">HAND LIMIT</label>
+        <div class="mode-row">
+          <button class="modb" data-hl="5">5</button>
+          <button class="modb active" data-hl="7">7</button>
+          <button class="modb" data-hl="10">10</button>
+        </div>
+      </div>
+
+      <div class="rules-row">
+        <label class="setup-label">RULES</label>
+        <div class="rules-wrap">
+          <label class="rtog"><input type="checkbox" id="r-stack" checked/><span class="rtrack"></span>+2 Stack</label>
+          <label class="rtog"><input type="checkbox" id="r-mercy"/><span class="rtrack"></span>No Mercy+4</label>
+          <label class="rtog"><input type="checkbox" id="r-70"/><span class="rtrack"></span>7-0 Rule</label>
+          <label class="rtog"><input type="checkbox" id="r-dtm"/><span class="rtrack"></span>Draw Till Match</label>
+          <label class="rtog"><input type="checkbox" id="r-fp" checked/><span class="rtrack"></span>Force Play</label>
+        </div>
+      </div>
+
+      <button id="btn-create-room" class="cta-primary btn-full">
+        🏁 CREATE ROOM
+      </button>
+    </div>
+
+    <!-- JOIN ROOM PANEL -->
+    <div id="panel-join" class="lobby-panel">
+      <div class="setup-row">
+        <label class="setup-label">YOUR NAME</label>
+        <input type="text" id="mp-name-join" class="f1-input" placeholder="Driver name..." maxlength="14" value="Driver 2"/>
+      </div>
+
+      <div class="setup-row">
+        <label class="setup-label">YOUR F1 TEAM</label>
+        <div class="team-grid" id="team-grid-join">
+          <div class="team-swatch" data-team="ferrari" style="--tc:#E8002D">🔴 Ferrari</div>
+          <div class="team-swatch active" data-team="mercedes" style="--tc:#00D2BE">🩵 Mercedes</div>
+          <div class="team-swatch" data-team="redbull" style="--tc:#3671C6">🔵 Red Bull</div>
+          <div class="team-swatch" data-team="mclaren" style="--tc:#FF8000">🟠 McLaren</div>
+          <div class="team-swatch" data-team="alpine" style="--tc:#0093CC">🩵 Alpine</div>
+          <div class="team-swatch" data-team="aston" style="--tc:#358C75">🟢 Aston</div>
+          <div class="team-swatch" data-team="williams" style="--tc:#005AFF">💙 Williams</div>
+          <div class="team-swatch" data-team="haas" style="--tc:#B6BABD">⚪ Haas</div>
+        </div>
+      </div>
+
+      <div class="setup-row">
+        <label class="setup-label">ROOM CODE</label>
+        <div class="code-input-wrap">
+          <input type="text" id="room-code-input" class="f1-input code-input" placeholder="e.g. ACE-7F" maxlength="7" autocomplete="off" spellcheck="false"/>
+          <button id="btn-paste-code" class="icon-btn" title="Paste">📋</button>
+        </div>
+      </div>
+
+      <button id="btn-join-room" class="cta-primary btn-full">🔑 JOIN ROOM</button>
+      <p class="join-hint">Ask the room host for their 6-character code</p>
+    </div>
+
+    <div id="lobby-status" class="lobby-status" style="display:none">
+      <div class="status-spinner"></div>
+      <span id="lobby-status-msg">Connecting...</span>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     SCREEN 3: WAITING ROOM
+====================================================== -->
+<div id="screen-waiting" class="screen">
+  <div class="carbon-bg"></div>
+  <div class="waiting-container">
+    <div class="f1-logo sm"><span class="logo-uno">UNO</span><span class="logo-slash">//</span><span class="logo-f1">F1</span></div>
+
+    <div class="room-code-display">
+      <span class="rcd-label">ROOM CODE</span>
+      <div class="rcd-code" id="display-room-code">ACE-7F</div>
+      <button id="btn-copy-code" class="copy-code-btn" title="Copy code">📋 COPY</button>
+    </div>
+    <p class="share-hint">Share this code with friends to join your race!</p>
+
+    <div class="waiting-players" id="waiting-players-list"></div>
+
+    <div class="waiting-bottom">
+      <div class="connection-status">
+        <div class="cs-dot" id="cs-dot"></div>
+        <span id="cs-text">Waiting for players...</span>
+      </div>
+      <button id="btn-start-mp" class="cta-primary" disabled>🏁 START RACE</button>
+      <button id="btn-cancel-room" class="cta-secondary" style="margin-top:10px;width:100%">✕ CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     SCREEN 4: SOLO SETUP
+====================================================== -->
+<div id="screen-setup" class="screen">
+  <div class="carbon-bg"></div>
+  <button class="back-btn" id="btn-setup-back">← BACK TO GRID</button>
+  <div class="lobby-container">
+    <div class="lobby-header">
+      <h2 class="lobby-title">VS AI SETUP</h2>
+    </div>
+
+    <div class="setup-row">
+      <label class="setup-label">YOUR NAME</label>
+      <input type="text" id="solo-name" class="f1-input" placeholder="Driver name..." maxlength="14" value="Player 1"/>
+    </div>
+
+    <div class="setup-row">
+      <label class="setup-label">YOUR F1 TEAM</label>
+      <div class="team-grid" id="team-grid-solo">
+        <div class="team-swatch active" data-team="ferrari" style="--tc:#E8002D">🔴 Ferrari</div>
+        <div class="team-swatch" data-team="mercedes" style="--tc:#00D2BE">🩵 Mercedes</div>
+        <div class="team-swatch" data-team="redbull" style="--tc:#3671C6">🔵 Red Bull</div>
+        <div class="team-swatch" data-team="mclaren" style="--tc:#FF8000">🟠 McLaren</div>
+        <div class="team-swatch" data-team="alpine" style="--tc:#0093CC">🩵 Alpine</div>
+        <div class="team-swatch" data-team="aston" style="--tc:#358C75">🟢 Aston</div>
+      </div>
+    </div>
+
+    <div class="setup-row">
+      <label class="setup-label">GAME MODE</label>
+      <div class="mode-row" id="solo-mode-row">
+        <button class="modb active" data-m="1v1">1v1</button>
+        <button class="modb" data-m="2v2">2v2</button>
+        <button class="modb" data-m="4v4">4v4</button>
+        <button class="modb" data-m="ffa">FFA</button>
+      </div>
+    </div>
+
+    <div class="setup-row">
+      <label class="setup-label">HAND LIMIT</label>
+      <div class="mode-row">
+        <button class="modb" data-shl="5">5</button>
+        <button class="modb active" data-shl="7">7</button>
+        <button class="modb" data-shl="10">10</button>
+      </div>
+    </div>
+
+    <div class="rules-row">
+      <label class="setup-label">RULES</label>
+      <div class="rules-wrap">
+        <label class="rtog"><input type="checkbox" id="sr-stack" checked/><span class="rtrack"></span>+2 Stack</label>
+        <label class="rtog"><input type="checkbox" id="sr-mercy"/><span class="rtrack"></span>No Mercy+4</label>
+        <label class="rtog"><input type="checkbox" id="sr-70"/><span class="rtrack"></span>7-0 Rule</label>
+        <label class="rtog"><input type="checkbox" id="sr-dtm"/><span class="rtrack"></span>Draw Till Match</label>
+        <label class="rtog"><input type="checkbox" id="sr-fp" checked/><span class="rtrack"></span>Force Play</label>
+      </div>
+    </div>
+
+    <button id="btn-start-solo" class="cta-primary btn-full">🏁 START RACE</button>
+  </div>
+</div>
+
+<!-- ======================================================
+     SCREEN 5: GAME
+====================================================== -->
+<div id="screen-game" class="screen">
+  <div class="carbon-bg"></div>
+  <div class="racing-stripe-top"></div>
+
+  <!-- Top HUD -->
+  <div class="game-hud">
+    <div class="hud-left">
+      <div class="f1-logo sm"><span class="logo-uno">UNO</span><span class="logo-slash">//</span><span class="logo-f1">F1</span></div>
+      <span class="hud-mode" id="hud-mode">1v1 DUEL</span>
+    </div>
+    <div class="hud-center">
+      <div class="turn-ticker" id="turn-ticker">
+        <span class="tt-dot"></span>
+        <span id="tt-text">YOUR TURN</span>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="lap-counter">LAP <span id="lap-num">1</span></div>
+      <button id="btn-game-snd" class="icon-btn">🔊</button>
+      <button id="btn-game-menu" class="icon-btn">☰</button>
+    </div>
+  </div>
+
+  <!-- Opponents grid -->
+  <div id="opponents-grid" class="opponents-grid"></div>
+
+  <!-- Center race track area -->
+  <div class="race-track">
+    <!-- Draw pile -->
+    <div class="pile-wrap draw-pile-wrap">
+      <div id="draw-pile" class="card-pile draw-pile" title="Draw a card" tabindex="0" role="button" aria-label="Draw a card">
+        <div class="dp-card dp-c1"></div>
+        <div class="dp-card dp-c2"></div>
+        <div class="dp-card dp-c3"></div>
+        <span class="pile-badge" id="pile-count">52</span>
+      </div>
+      <span class="pile-lbl">DRAW</span>
+    </div>
+
+    <!-- Color indicator + discard -->
+    <div class="discard-zone">
+      <div class="color-band" id="color-band"></div>
+      <div id="discard-pile-wrap" class="discard-pile-wrap">
+        <div id="top-card" class="game-card discard-card"></div>
+      </div>
+      <div class="status-strip" id="status-strip">MATCH COLOR OR NUMBER</div>
+    </div>
+
+    <!-- Direction + pending draw -->
+    <div class="track-info">
+      <div class="direction-ring" id="dir-ring">
+        <svg width="56" height="56" viewBox="0 0 56 56">
+          <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="3"/>
+          <path id="dir-arc" fill="none" stroke="#E10600" stroke-width="3" stroke-linecap="round"/>
+          <polygon id="dir-tip" fill="#E10600"/>
+        </svg>
+        <span class="dir-txt" id="dir-txt">CW</span>
+      </div>
+      <div class="pending-draw-badge" id="pending-draw-badge" style="display:none">
+        <span class="pdb-num" id="pdb-num">+2</span>
+        <span class="pdb-lbl">PENDING</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player hand area -->
+  <div class="player-dock">
+    <div class="dock-info-bar">
+      <div class="dock-driver">
+        <div class="driver-dot" id="driver-dot"></div>
+        <span id="dock-name">DRIVER 1</span>
+        <span class="dock-team-badge" id="dock-team">FERRARI</span>
+      </div>
+      <span class="dock-count" id="dock-count">7 cards</span>
+      <button id="btn-uno" class="uno-shout" style="display:none">UNO!</button>
+    </div>
+    <div id="hand-container" class="hand-container"></div>
+    <div class="dock-actions" id="dock-actions">
+      <button id="btn-draw" class="act-btn act-draw">DRAW CARD</button>
+      <button id="btn-pass" class="act-btn act-pass" style="display:none">PASS TURN</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     OVERLAYS
+====================================================== -->
+<!-- Color Picker -->
+<div id="ov-color" class="overlay" style="display:none">
+  <div class="ov-panel color-picker-panel">
+    <h3 class="ov-title">🎨 CHOOSE COLOR</h3>
+    <div class="color-grid">
+      <button class="col-btn" data-color="red"><div class="col-orb red-orb"></div><span>RED</span></button>
+      <button class="col-btn" data-color="blue"><div class="col-orb blue-orb"></div><span>BLUE</span></button>
+      <button class="col-btn" data-color="green"><div class="col-orb green-orb"></div><span>GREEN</span></button>
+      <button class="col-btn" data-color="yellow"><div class="col-orb yellow-orb"></div><span>YELLOW</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Pause Menu -->
+<div id="ov-pause" class="overlay" style="display:none">
+  <div class="ov-panel pause-panel">
+    <div class="f1-logo sm"><span class="logo-uno">UNO</span><span class="logo-slash">//</span><span class="logo-f1">F1</span></div>
+    <h3>RACE PAUSED</h3>
+    <button id="btn-resume" class="cta-primary btn-full">▶ RESUME</button>
+    <button id="btn-restart" class="cta-secondary btn-full">↺ RESTART</button>
+    <button id="btn-quit" class="cta-danger btn-full">✕ QUIT TO GRID</button>
+  </div>
+</div>
+
+<!-- How To Play -->
+<div id="ov-htp" class="overlay" style="display:none">
+  <div class="ov-panel htp-panel">
+    <button class="ov-close" id="btn-close-htp">✕</button>
+    <h2>🏁 HOW TO RACE</h2>
+    <div class="htp-body">
+      <section><h3>🎯 OBJECTIVE</h3><p>First to play all your cards wins! Call <b>UNO!</b> when you have 1 card left or draw 2 penalty cards.</p></section>
+      <section>
+        <h3>🃏 CARD TYPES</h3>
+        <div class="htp-cards">
+          <div class="hc"><div class="hc-card hc-red">7</div><p>Number – match color or number</p></div>
+          <div class="hc"><div class="hc-card hc-red">⊘</div><p>Skip – next player loses turn</p></div>
+          <div class="hc"><div class="hc-card hc-blue">↺</div><p>Reverse – flip direction</p></div>
+          <div class="hc"><div class="hc-card hc-red">+2</div><p>Draw Two – next player draws 2</p></div>
+          <div class="hc"><div class="hc-card hc-wild">W</div><p>Wild – pick any color</p></div>
+          <div class="hc"><div class="hc-card hc-wild">+4</div><p>Wild Draw 4 – color + draw 4</p></div>
+        </div>
+      </section>
+      <section><h3>⌨️ SHORTCUTS</h3><p><b>D</b> – Draw card &nbsp;|&nbsp; <b>U</b> – Call UNO! &nbsp;|&nbsp; <b>Esc</b> – Pause</p></section>
+      <section><h3>👥 MULTIPLAYER</h3><p>Create a room → share the 6-char code with friends → they enter it to join → host clicks START RACE.</p></section>
+    </div>
+  </div>
+</div>
+
+<!-- Win Screen -->
+<div id="screen-win" class="overlay win-overlay" style="display:none">
+  <canvas id="win-canvas"></canvas>
+  <div class="win-modal">
+    <div class="checkered-bar"></div>
+    <div class="win-trophy" id="win-trophy">🏆</div>
+    <h2 class="win-title" id="win-title">YOU WIN!</h2>
+    <p class="win-sub" id="win-sub">Outstanding race!</p>
+    <div class="win-stats-grid" id="win-stats-grid"></div>
+    <div class="win-actions">
+      <button id="btn-rematch" class="cta-primary">🔄 REMATCH</button>
+      <button id="btn-main-menu" class="cta-secondary">🏠 MAIN GRID</button>
+    </div>
+    <div class="checkered-bar"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast-rack" aria-live="polite"></div>
+
+<!-- Card fly animation layer -->
+<div id="card-fly-layer" style="position:fixed;inset:0;pointer-events:none;z-index:500;"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
