@@ -358,15 +358,21 @@ function applyEffect(card) {
 
 // ── HUMAN ACTION: PLAY ──
 function humanPlay(cardId, chosenColor=null) {
-  if (G.over || G.curIdx !== G.myIdx) return;
+  if (G.over) return;
+  if (Number(G.curIdx) !== Number(G.myIdx)) {
+    toast("❌ Not your turn!", "t-red");
+    return;
+  }
+
   const p = G.players[G.myIdx];
+  if (!p) return;
   const ci = p.hand.findIndex(c=>c.id===cardId);
   if (ci===-1) return;
   const card = p.hand[ci];
 
   // Must clear pending draw if can't stack
   if (G.pending>0) {
-    const canStack = (card.v==='draw2' && G.cfg.rules.stacking) || (card.v==='wild4' && G.cfg.rules.noMercy);
+    const canStack = (card.v==='draw2' && (G.cfg?.rules?.stacking??true)) || (card.v==='wild4' && (G.cfg?.rules?.noMercy??false));
     if (!canStack) { forceDrawPending(); return; }
   }
 
@@ -376,6 +382,14 @@ function humanPlay(cardId, chosenColor=null) {
 
   if (isWild(card) && !chosenColor) { showColorPicker(cardId); return; }
 
+  // Guest in multiplayer mode: delegate move to Host
+  if (G.isMultiplayer && !MP.getIsHost()) {
+    Audio.play('cardPlay'); cardSFX(card);
+    MP.sendMove({ type:'PLAY_CARD', cardId, chosenColor });
+    return;
+  }
+
+  // Host (or Solo mode): Authoritative execution
   G.curColor = chosenColor || card.c;
   p.hand.splice(ci, 1);
   G.discardPile.push(card); G.topCard = card;
@@ -386,29 +400,30 @@ function humanPlay(cardId, chosenColor=null) {
   // UNO logic
   if (p.hand.length===1) {
     G.unoAble=true; G.unoCalled=false;
-    setTimeout(()=>{ if(G.unoAble && !G.unoCalled) { drawCards(G.myIdx,2,true); Audio.play('penalty'); toast('⚠️ Forgot UNO! +2 penalty!','t-red'); G.unoAble=false; renderGame(); } }, 3500);
+    setTimeout(()=>{
+      if(G.unoAble && !G.unoCalled) {
+        drawCards(G.myIdx,2,true); Audio.play('penalty'); toast('⚠️ Forgot UNO! +2 penalty!','t-red');
+        G.unoAble=false; renderGame();
+        if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState();
+      }
+    }, 3500);
   } else { G.unoAble=false; }
 
-  if (!p.hand.length) { endGame(G.myIdx); return; }
+  if (!p.hand.length) { endGame(G.myIdx); if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState(); return; }
   if (G.cfg.rules.sevenZero && card.v==='7') { openSwapSelect(G.myIdx); return; }
   if (G.cfg.rules.sevenZero && card.v==='0') { rotateAllHands(); }
 
-  // Fix draw2/wild4 pending logic
-  if (card.v==='draw2') { G.pending = (G.cfg.rules.stacking && G.pending>0) ? G.pending+2 : 2; G.curIdx = nextIdx(); }
-  else if (card.v==='wild4') { G.pending = (G.cfg.rules.noMercy && G.pending>0) ? G.pending+4 : 4; G.curIdx = nextIdx(); }
+  // Turn advancement
+  if (card.v==='draw2') { G.pending = (G.cfg?.rules?.stacking && G.pending>0) ? G.pending+2 : 2; G.curIdx = nextIdx(); }
+  else if (card.v==='wild4') { G.pending = (G.cfg?.rules?.noMercy && G.pending>0) ? G.pending+4 : 4; G.curIdx = nextIdx(); }
   else if (card.v==='reverse') { G.dir*=-1; G.curIdx = nextIdx(G.curIdx, G.players.length===2?1:0); }
   else if (card.v==='skip') { G.curIdx = nextIdx(G.curIdx,1); }
   else { G.curIdx = nextIdx(); }
 
   G.turns++; G.lapNum = Math.ceil(G.turns / G.players.length);
 
-  // Multiplayer: send to host/peers
-  if (G.isMultiplayer) {
-    if (MP.getIsHost()) {
-      MP.broadcastGameState();
-    } else {
-      MP.sendMove({ type:'PLAY_CARD', cardId, chosenColor });
-    }
+  if (G.isMultiplayer && MP.getIsHost()) {
+    MP.broadcastGameState();
   }
 
   renderGame();
@@ -481,23 +496,25 @@ function showDrawnChoiceModal(card) {
 }
 
 function humanPass() {
-  if (G.over || G.curIdx!==G.myIdx || !G.drawnThis) return;
-  G.drawnThis=false; G.curIdx=nextIdx(); G.turns++;
-  if (G.isMultiplayer) {
-    if (MP.getIsHost()) MP.broadcastGameState();
-    else MP.sendMove({ type:'PASS' });
+  if (G.over || Number(G.curIdx) !== Number(G.myIdx) || !G.drawnThis) return;
+  if (G.isMultiplayer && !MP.getIsHost()) {
+    MP.sendMove({ type: 'PASS' });
+    return;
   }
+  G.drawnThis = false; G.curIdx = nextIdx(); G.turns++;
+  if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState();
   renderGame(); scheduleAI();
 }
 
 function callUno() {
   if (!G.unoAble) { Audio.play('error'); toast('No UNO needed right now!','t-red'); return; }
-  G.unoCalled=true; G.unoAble=false;
+  G.unoCalled = true; G.unoAble = false;
   Audio.play('uno'); toast('🗣️ UNO!', 't-gold');
-  if (G.isMultiplayer) {
-    if (MP.getIsHost()) MP.broadcastGameState();
-    else MP.sendMove({ type:'CALL_UNO' });
+  if (G.isMultiplayer && !MP.getIsHost()) {
+    MP.sendMove({ type: 'CALL_UNO' });
+    return;
   }
+  if (G.isMultiplayer && MP.getIsHost()) MP.broadcastGameState();
 }
 
 function cardSFX(card) {
@@ -1060,38 +1077,32 @@ const MP = (() => {
 
   function processHostMove(playerId, move) {
     const pId = Number(playerId);
-    if (Number(G.curIdx) !== pId) return; // not their turn
+    if (Number(G.curIdx) !== pId) return; // verify it is Guest's turn
+
+    const realMyIdx = G.myIdx;
+    G.myIdx = pId;
 
     if (move.type === 'PLAY_CARD') {
-      const realMyIdx = G.myIdx;
-      G.myIdx = pId;
       humanPlay(move.cardId, move.chosenColor);
-      G.myIdx = realMyIdx;
     }
     else if (move.type === 'DRAW_CARD') {
       drawCards(pId, 1);
       const drawnCard = G.players[pId]?.hand.at(-1);
       const isPlayable = drawnCard ? canPlay(drawnCard, G.topCard, G.curColor, G.cfg.rules) : false;
+      G.drawnThis = true;
       broadcastGameState({ forPlayer: pId, card: drawnCard, isPlayable });
     }
     else if (move.type === 'FORCE_DRAW_PENDING') {
-      const realMyIdx = G.myIdx;
-      G.myIdx = pId;
       forceDrawPending();
-      G.myIdx = realMyIdx;
     }
     else if (move.type === 'PASS') {
-      const realMyIdx = G.myIdx;
-      G.myIdx = pId;
       humanPass();
-      G.myIdx = realMyIdx;
     }
     else if (move.type === 'CALL_UNO') {
-      const realMyIdx = G.myIdx;
-      G.myIdx = pId;
       callUno();
-      G.myIdx = realMyIdx;
     }
+
+    G.myIdx = realMyIdx;
   }
 
   function broadcastGameState(drawnInfo = null) {
